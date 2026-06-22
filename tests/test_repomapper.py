@@ -177,3 +177,66 @@ class TestRepoMapper:
         result = mapper.map(run_probes=False)
         assert "duration_seconds" in result
         assert result["duration_seconds"] >= 0
+
+
+# ==========================================
+# CLI subprocess tests (real invocation path)
+# ==========================================
+
+import subprocess
+import sys
+
+
+class TestCLI:
+    def test_cli_module_invocation(self, sample_repo):
+        """python3 -m repomapper /path --no-probes should succeed."""
+        result = subprocess.run(
+            [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes"],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert "Language:" in result.stdout
+
+    def test_cli_json_output(self, sample_repo):
+        """python3 -m repomapper /path --no-probes --json should return valid JSON."""
+        result = subprocess.run(
+            [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes", "--json"],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(result.stdout)
+        assert "repo_map" in data
+        assert "guidance" in data
+
+    def test_cli_writes_agents_md(self, sample_repo):
+        """CLI should write AGENTS.md to the repo path by default."""
+        result = subprocess.run(
+            [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes"],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        agents_md = sample_repo / "AGENTS.md"
+        assert agents_md.exists()
+        content = agents_md.read_text()
+        assert len(content) > 0
+        # Clean up
+        agents_md.unlink()
+
+    def test_cli_custom_output(self, sample_repo):
+        """--output should write to the specified file."""
+        out_file = sample_repo / "GUIDE.md"
+        result = subprocess.run(
+            [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes", "-o", str(out_file)],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        assert out_file.exists()
+        out_file.unlink()
+
+    def test_cli_nonexistent_repo(self):
+        """CLI with invalid path should fail gracefully."""
+        result = subprocess.run(
+            [sys.executable, "-m", "repomapper", "/nonexistent/path/xyz", "--no-probes"],
+            capture_output=True, text=True
+        )
+        assert result.returncode != 0
