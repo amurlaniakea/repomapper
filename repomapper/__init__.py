@@ -441,10 +441,11 @@ class ProbeGenerator:
     def _detect_test_command(self) -> str:
         root = self.repo_map.root
         if self.repo_map.language == "Python":
-            if any(Path(root).rglob("test_*.py")):
-                return f"cd {root} && python3 -m pytest --co -q 2>&1 | head -20"
-            else:
+            framework = self.repo_map.conventions.get("test_framework", "pytest")
+            if framework == "unittest":
                 return f"cd {root} && python3 -m unittest discover -s . -p 'test_*.py' 2>&1 | head -20"
+            else:
+                return f"cd {root} && python3 -m pytest --co -q 2>&1 | head -20"
         elif self.repo_map.language in ("JavaScript", "TypeScript"):
             return f"cd {root} && npm test -- --listTests 2>&1 | head -20"
         elif self.repo_map.language == "Go":

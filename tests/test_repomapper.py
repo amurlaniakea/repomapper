@@ -178,6 +178,63 @@ class TestRepoMapper:
         assert "duration_seconds" in result
         assert result["duration_seconds"] >= 0
 
+    def test_framework_and_command_consistent_pytest(self, sample_repo):
+        """conventions[test_framework] and _detect_test_command() must agree for pytest."""
+        scanner = RepoScanner(str(sample_repo))
+        repo_map = scanner.scan()
+        framework = repo_map.conventions.get("test_framework")
+        gen = ProbeGenerator(repo_map)
+        cmd = gen._detect_test_command()
+        if framework == "pytest":
+            assert "pytest" in cmd, f"framework={framework} but cmd={cmd}"
+        elif framework == "unittest":
+            assert "unittest" in cmd, f"framework={framework} but cmd={cmd}"
+
+
+@pytest.fixture
+def unittest_repo(tmp_path):
+    """Create a repo that uses unittest (not pytest)."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_foo.py").write_text(
+        'import unittest\n\n'
+        'class TestFoo(unittest.TestCase):\n'
+        '    def test_bar(self):\n'
+        '        self.assertTrue(True)\n'
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "unittest-repo"\nversion = "0.1.0"\n'
+    )
+    return tmp_path
+
+
+class TestFrameworkConsistency:
+    """Verify conventions[test_framework] matches _detect_test_command()."""
+
+    def test_unittest_repo_detected(self, unittest_repo):
+        scanner = RepoScanner(str(unittest_repo))
+        repo_map = scanner.scan()
+        assert repo_map.conventions.get("test_framework") == "unittest"
+
+    def test_unittest_command_matches(self, unittest_repo):
+        scanner = RepoScanner(str(unittest_repo))
+        repo_map = scanner.scan()
+        gen = ProbeGenerator(repo_map)
+        cmd = gen._detect_test_command()
+        assert "unittest discover" in cmd
+        assert "pytest --co" not in cmd
+
+    def test_pytest_repo_detected(self, sample_repo):
+        scanner = RepoScanner(str(sample_repo))
+        repo_map = scanner.scan()
+        assert repo_map.conventions.get("test_framework") == "pytest"
+
+    def test_pytest_command_matches(self, sample_repo):
+        scanner = RepoScanner(str(sample_repo))
+        repo_map = scanner.scan()
+        gen = ProbeGenerator(repo_map)
+        cmd = gen._detect_test_command()
+        assert "pytest --co" in cmd
+
 
 # ==========================================
 # CLI subprocess tests (real invocation path)
