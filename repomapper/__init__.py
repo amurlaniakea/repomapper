@@ -259,6 +259,47 @@ class RepoScanner:
 
         return list(dict.fromkeys(deps))
 
+    def _detect_python_test_framework(self, test_files: list[Path]) -> str:
+        """Detect whether a Python repo uses pytest or unittest.
+
+        Heuristic (in order of confidence):
+        1. Check test file imports for 'pytest' or 'unittest'
+        2. Check pyproject.toml / setup.cfg / requirements.txt for pytest dep
+        3. Default to 'pytest' if test_*.py files exist (common convention)
+        """
+        # 1. Inspect imports in test files
+        has_pytest_import = False
+        has_unittest_import = False
+        for tf in test_files:
+            try:
+                content = tf.read_text(errors="ignore")
+                if re.search(r"^\s*import\s+pytest|^\s*from\s+pytest", content, re.M):
+                    has_pytest_import = True
+                if re.search(r"^\s*import\s+unittest|^\s*from\s+unittest", content, re.M):
+                    has_unittest_import = True
+            except OSError:
+                pass
+
+        if has_pytest_import and not has_unittest_import:
+            return "pytest"
+        if has_unittest_import and not has_pytest_import:
+            return "unittest"
+        # Both or neither import found — fall through to dependency check
+
+        # 2. Check declared dependencies
+        for dep_file in ("pyproject.toml", "setup.cfg", "requirements.txt", "Pipfile"):
+            dep_path = self.repo_path / dep_file
+            if dep_path.exists():
+                try:
+                    content = dep_path.read_text(errors="ignore")
+                    if "pytest" in content:
+                        return "pytest"
+                except OSError:
+                    pass
+
+        # 3. Default: pytest is the most common convention for test_*.py naming
+        return "pytest"
+
     def _detect_conventions(self) -> dict[str, Any]:
         conventions: dict[str, Any] = {}
         py_files = list(self.repo_path.glob("*.py"))[:5]
@@ -295,9 +336,11 @@ class RepoScanner:
                 "indent": indent_style,
             }
 
-        test_files = list(self.repo_path.rglob("test_*.py"))[:3]
+        # Detect Python test framework: check imports in test files and dependencies
+        test_files = list(self.repo_path.rglob("test_*.py"))[:5]
         if test_files:
-            conventions["test_framework"] = "pytest"
+            framework = self._detect_python_test_framework(test_files)
+            conventions["test_framework"] = framework
         elif (self.repo_path / "package.json").exists():
             try:
                 with open(self.repo_path / "package.json") as f:
@@ -607,6 +650,17 @@ class RepoMapper:
             "duration_seconds": round(duration, 2),
         }
 
+    def _is_missing_tool_error(self, output: str) -> bool:
+        """Check if probe output indicates a missing tool (not a real repo error)."""
+        missing_patterns = [
+            "No module named",
+            "ModuleNotFoundError",
+            "command not found",
+            "not recognized as an internal or external command",
+            "executable not found",
+        ]
+        return any(p in output for p in missing_patterns)
+
     def _run_probe(self, probe: dict[str, Any]) -> dict[str, Any]:
         """Run a single probe and return results."""
         result = {
@@ -634,9 +688,16 @@ class RepoMapper:
                 result["output"] = output[:500]
 
                 if "IMPORT_FAILED" in output or "SYNTAX_ERROR" in output or "Traceback" in output:
-                    result["findings"].append("Error detected in output")
+                    # Distinguish "tool not installed" from real errors
+                    if self._is_missing_tool_error(output):
+                        result["findings"].append("Test tool not installed in environment")
+                    else:
+                        result["findings"].append("Error detected in output")
                 elif proc.returncode != 0 and "No test command" not in output:
-                    result["findings"].append(f"Non-zero exit code: {proc.returncode}")
+                    if self._is_missing_tool_error(output):
+                        result["findings"].append("Test tool not installed in environment")
+                    else:
+                        result["findings"].append(f"Non-zero exit code: {proc.returncode}")
                 else:
                     result["passed"] = True
                     result["findings"].append("Command executed successfully")
