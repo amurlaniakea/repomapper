@@ -398,7 +398,7 @@ class ProbeGenerator:
     def _detect_test_command(self) -> str:
         root = self.repo_map.root
         if self.repo_map.language == "Python":
-            if (Path(root) / "pytest.ini").exists() or (Path(root) / "conftest.py").exists():
+            if any(Path(root).rglob("test_*.py")):
                 return f"cd {root} && python3 -m pytest --co -q 2>&1 | head -20"
             else:
                 return f"cd {root} && python3 -m unittest discover -s . -p 'test_*.py' 2>&1 | head -20"

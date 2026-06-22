@@ -103,8 +103,7 @@ python3 -m repomapper /path/to/repo --output GUIDE.md
 repomapper/
 ├── repomapper/
 │   ├── __init__.py      # Main module (RepoMapper, Scanner, Probes, Guidance)
-│   └── core/
-│       └── __init__.py
+│   └── __main__.py      # CLI entry point (python3 -m repomapper)
 ├── tests/
 │   └── test_repomapper.py
 ├── docs/
@@ -113,6 +112,7 @@ repomapper/
 │   └── example_usage.py
 ├── README.md
 ├── LICENSE
+├── pyproject.toml
 └── .gitignore
 ```
 

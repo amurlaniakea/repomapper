@@ -1,6 +1,6 @@
 # Probe-and-Refine Tuning of Repository Guidance for Coding Agents
 
-**Asa Shepard, Jeannie Arbrecht**
+**Asa Shepard, Jeannie Albrecht**
 arXiv:2606.20512, June 2026
 
 ## Summary
