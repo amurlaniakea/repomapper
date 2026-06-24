@@ -305,10 +305,7 @@ class RepoScanner:
         pyproject = self.repo_path / "pyproject.toml"
         if pyproject.exists():
             try:
-                try:
-                    import tomllib
-                except ModuleNotFoundError:
-                    import tomli as tomllib
+                import tomli as tomllib
 
                 with open(pyproject, "rb") as f:
                     data = tomllib.load(f)
