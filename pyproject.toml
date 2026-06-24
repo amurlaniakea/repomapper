@@ -12,6 +12,9 @@ authors = [
     {name = "Pedro Sordo Martínez", email = "amurlaniakea@gmail.com"},
 ]
 requires-python = ">=3.10"
+dependencies = [
+    "tomli>=2.0; python_version < '3.11'",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: GNU Affero General Public License v3",
