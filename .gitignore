@@ -15,3 +15,5 @@ venv/
 htmlcov/
 .DS_Store
 AGENTS.md
+download_patch_eval.py
+filter_python_rce.py
