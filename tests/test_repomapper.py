@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from repomapper import GuidanceGenerator, ProbeGenerator, RepoMapper, RepoScanner
+from repomapper.probes import run_probe
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ def sample_repo(tmp_path):
 
     # Test file
     (tmp_path / "tests" / "test_main.py").write_text(
-        '"""Tests."""\nfrom src.main import main\n\ndef test_main():\n    """Test main."""\n    assert main is not None\n'
+        '"""Tests."""\nimport pytest\nfrom src.main import main\n\ndef test_main():\n    """Test main."""\n    assert main is not None\n'
     )
 
     # Config
@@ -177,8 +178,8 @@ class TestRepoMapper:
         assert "duration_seconds" in result
         assert result["duration_seconds"] >= 0
 
-    def test_framework_and_command_consistent_pytest(self, sample_repo):
-        """conventions[test_framework] and test_runner type must agree."""
+    def test_static_analysis_pytest_passes(self, sample_repo):
+        """test_runner static analysis should pass for pytest repos."""
         scanner = RepoScanner(str(sample_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
@@ -212,25 +213,41 @@ class TestFrameworkConsistency:
         repo_map = scanner.scan()
         assert repo_map.conventions.get("test_framework") == "unittest"
 
-    def test_unittest_command_matches(self, unittest_repo):
+    def test_static_analysis_unittest_framework_detected(self, unittest_repo):
+        """test_runner static analysis should detect 'framework: unittest'."""
         scanner = RepoScanner(str(unittest_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
         probes = gen.generate_probes(5)
         test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
         assert test_runner is not None
-        # test_runner now uses static_analysis type (no subprocess execution)
         assert test_runner['type'] == 'static_analysis'
 
-    def test_pytest_command_matches(self, sample_repo):
+        # Execute the static analysis and verify framework detection
+        result = run_probe(str(unittest_repo), test_runner)
+        assert result['passed'], f"Expected passed, got findings: {result['findings']}"
+        full_output = " ".join(result['findings']) + result['output']
+        assert 'framework: unittest' in full_output, (
+            f"Expected 'framework: unittest' in findings/output, got findings={result['findings']!r} output={result['output']!r}"
+        )
+
+    def test_static_analysis_pytest_framework_detected(self, sample_repo):
+        """test_runner static analysis should detect 'framework: pytest'."""
         scanner = RepoScanner(str(sample_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
         probes = gen.generate_probes(5)
         test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
         assert test_runner is not None
-        # test_runner now uses static_analysis type (no subprocess execution)
         assert test_runner['type'] == 'static_analysis'
+
+        # Execute the static analysis and verify framework detection
+        result = run_probe(str(sample_repo), test_runner)
+        assert result['passed'], f"Expected passed, got findings: {result['findings']}"
+        full_output = " ".join(result['findings']) + result['output']
+        assert 'framework: pytest' in full_output, (
+            f"Expected 'framework: pytest' in findings/output, got findings={result['findings']!r} output={result['output']!r}"
+        )
 
 
 # ==========================================
