@@ -30,12 +30,12 @@ jobs:
 
       - name: Lint
         run: |
-          python -m ruff check repomapper/ tests/
-          python -m mypy repomapper/
-
-      - name: Run tests
+          python -m ruff check src/ tests/
+      - name: Type check
         run: |
-          python -m pytest tests/ -v --tb=short --cov=repomapper --cov-report=term-missing
+          python -m mypy src/repomapper/
+      - name: Run tests
+        run: PYTHONPATH=src python -m pytest tests/ -v --tb=short
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
