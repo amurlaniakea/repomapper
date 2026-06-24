@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -32,9 +30,8 @@ jobs:
 
       - name: Lint
         run: |
-          pip install ruff mypy
-          ruff check repomapper/ tests/
-          mypy repomapper/
+          python -m ruff check repomapper/ tests/
+          python -m mypy repomapper/
 
       - name: Run tests
         run: |
