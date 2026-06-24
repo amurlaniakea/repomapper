@@ -171,7 +171,7 @@ class RepoScanner:
                     lang = lang_map[ext]
                     language_stats[lang] = language_stats.get(lang, 0) + 1
 
-                if self._matches_any(rel_path, self.ENTRY_POINT_PATTERNS):
+                if self._matches_any(rel_path, self.ENTRY_POINT_PATTERNS) and not self._matches_any(rel_path, self.TEST_PATTERNS):
                     entry_points.append(rel_path)
                 if self._matches_any(rel_path, self.TEST_PATTERNS):
                     test_files.append(rel_path)

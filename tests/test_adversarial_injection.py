@@ -40,9 +40,8 @@ def _make_repo_map(root, language="Python", entry_points=None, config_files=None
 
 class TestCommandInjection_FullPipeline:
     """Test the COMPLETE pipeline: ProbeGenerator.generate_probes() -> run_probe()."""
-
     def test_vector_1_detect_test_command(self):
-        """Vector 1: _detect_test_command interpolates root into 'cd {root} && ...'"""
+        """Vector 1: test_runner uses static analysis (no conftest.py execution)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             malicious_root = "/tmp/evil_v1$(touch /tmp/PWNED_V1)"
             marker = pathlib.Path("/tmp/PWNED_V1")
@@ -50,21 +49,21 @@ class TestCommandInjection_FullPipeline:
                 marker.unlink()
 
             repo_map = _make_repo_map(root=malicious_root)
+
             gen = ProbeGenerator(repo_map)
             probes = gen.generate_probes(count=5)
 
             test_runner = next((p for p in probes if p["id"] == "test_runner"), None)
             assert test_runner is not None, "test_runner probe not generated"
 
-            if malicious_root in test_runner["command"]:
-                # If root still appears in command, verify no execution
-                run_probe(tmpdir, test_runner)
-                assert not marker.exists(), f"INJECTION via test_runner! {marker} exists"
-            else:
-                # Fix verified: root no longer interpolated
-                assert "cd " not in test_runner["command"], (
-                    f"Expected no 'cd' in command: {test_runner['command']}"
-                )
+            # static_analysis type — no command field, no conftest.py execution
+            assert test_runner["type"] == "static_analysis"
+
+            run_probe(tmpdir, test_runner)
+
+            assert not marker.exists(), (
+                f"SECURITY FAIL: static analysis executed injected command! {marker} exists."
+            )
 
     def test_vector_2_import_check(self):
         """Vector 2: import_check interpolates entry_points[0] into python3 -c."""
@@ -110,9 +109,8 @@ class TestCommandInjection_FullPipeline:
 
             run_probe(tmpdir, config_probe)
             assert not marker.exists(), f"INJECTION via config_valid! {marker} exists"
-
     def test_vector_4_syntax_check(self):
-        """Vector 4: syntax_check interpolates root into 'cd {root} && ... $(find ...)'"""
+        """Vector 4: syntax_check uses static py_compile (no subprocess)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             malicious_root = "/tmp/evil_v4$(touch /tmp/PWNED_V4)"
             marker = pathlib.Path("/tmp/PWNED_V4")
@@ -120,6 +118,7 @@ class TestCommandInjection_FullPipeline:
                 marker.unlink()
 
             repo_map = _make_repo_map(root=malicious_root)
+
             gen = ProbeGenerator(repo_map)
             probes = gen.generate_probes(count=5)
 
@@ -128,13 +127,10 @@ class TestCommandInjection_FullPipeline:
                 f"syntax_check probe not generated: {[p['id'] for p in probes]}"
             )
 
-            if malicious_root in syntax_check["command"]:
-                run_probe(tmpdir, syntax_check)
-                assert not marker.exists(), f"INJECTION via syntax_check! {marker} exists"
-            else:
-                assert "cd " not in syntax_check["command"], (
-                    f"Expected no 'cd' in command: {syntax_check['command']}"
-                )
+            # syntax_check is type="syntax" (static analysis), no "command" field
+            assert syntax_check["type"] == "syntax"
+            run_probe(tmpdir, syntax_check)
+            assert not marker.exists(), f"INJECTION via syntax_check! {marker} exists"
 
     def test_vector_5_subsystem_structure(self):
         """Vector 5: subsystem_structure interpolates root into 'ls -la {root}/{name}/'"""

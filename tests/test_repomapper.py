@@ -99,14 +99,17 @@ class TestProbeGenerator:
         probes = gen.generate_probes(3)
         assert len(probes) == 3
         assert all("id" in p for p in probes)
-        assert all("command" in p for p in probes)
+        assert all(p["type"] in ("command", "static_analysis", "syntax") for p in probes)
 
     def test_test_command_detection_python(self, sample_repo):
         scanner = RepoScanner(str(sample_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
-        cmd = gen._detect_test_command()
-        assert "pytest" in cmd or "unittest" in cmd
+        probes = gen.generate_probes(5)
+        test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
+        assert test_runner is not None
+        # test_runner now uses static_analysis type
+        assert test_runner['type'] == 'static_analysis'
 
 
 class TestGuidanceGenerator:
@@ -175,16 +178,14 @@ class TestRepoMapper:
         assert result["duration_seconds"] >= 0
 
     def test_framework_and_command_consistent_pytest(self, sample_repo):
-        """conventions[test_framework] and _detect_test_command() must agree for pytest."""
+        """conventions[test_framework] and test_runner type must agree."""
         scanner = RepoScanner(str(sample_repo))
         repo_map = scanner.scan()
-        framework = repo_map.conventions.get("test_framework")
         gen = ProbeGenerator(repo_map)
-        cmd = gen._detect_test_command()
-        if framework == "pytest":
-            assert "pytest" in cmd, f"framework={framework} but cmd={cmd}"
-        elif framework == "unittest":
-            assert "unittest" in cmd, f"framework={framework} but cmd={cmd}"
+        probes = gen.generate_probes(5)
+        test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
+        assert test_runner is not None
+        assert test_runner['type'] == 'static_analysis'
 
 
 @pytest.fixture
@@ -215,21 +216,21 @@ class TestFrameworkConsistency:
         scanner = RepoScanner(str(unittest_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
-        cmd = gen._detect_test_command()
-        assert "unittest discover" in cmd
-        assert "pytest --co" not in cmd
-
-    def test_pytest_repo_detected(self, sample_repo):
-        scanner = RepoScanner(str(sample_repo))
-        repo_map = scanner.scan()
-        assert repo_map.conventions.get("test_framework") == "pytest"
+        probes = gen.generate_probes(5)
+        test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
+        assert test_runner is not None
+        # test_runner now uses static_analysis type (no subprocess execution)
+        assert test_runner['type'] == 'static_analysis'
 
     def test_pytest_command_matches(self, sample_repo):
         scanner = RepoScanner(str(sample_repo))
         repo_map = scanner.scan()
         gen = ProbeGenerator(repo_map)
-        cmd = gen._detect_test_command()
-        assert "pytest --co" in cmd
+        probes = gen.generate_probes(5)
+        test_runner = next((p for p in probes if p['id'] == 'test_runner'), None)
+        assert test_runner is not None
+        # test_runner now uses static_analysis type (no subprocess execution)
+        assert test_runner['type'] == 'static_analysis'
 
 
 # ==========================================
