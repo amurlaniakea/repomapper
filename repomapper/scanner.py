@@ -305,17 +305,20 @@ class RepoScanner:
         pyproject = self.repo_path / "pyproject.toml"
         if pyproject.exists():
             try:
+                import tomllib
+            except ModuleNotFoundError:
                 import tomli as tomllib
 
+            try:
                 with open(pyproject, "rb") as f:
                     data = tomllib.load(f)
-                # Safely extract from PEP 621 dependencies
-                project_deps = data.get("project", {}).get("dependencies", [])
-                for dep in project_deps:
-                    # Extract just the package name from specifier like "requests>=2.0,<3.0"
-                    match = re.match(r"^([a-zA-Z0-9_-]+)", dep.strip())
-                    if match:
-                        deps.append(match.group(1))
+                    # Safely extract from PEP 621 dependencies
+                    project_deps = data.get("project", {}).get("dependencies", [])
+                    for dep in project_deps:
+                        # Extract just the package name from specifier like "requests>=2.0,<3.0"
+                        match = re.match(r"^([a-zA-Z0-9_-]+)", dep.strip())
+                        if match:
+                            deps.append(match.group(1))
             except Exception:  # noqa: S110 — intentional fallback to package_json
                 pass
 
