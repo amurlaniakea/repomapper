@@ -3,12 +3,11 @@
 import io
 import json
 import sys
-import pathlib
 from unittest.mock import patch
 
 import pytest
 
-from repomapper import main, RepoMapper
+from repomapper import main
 
 
 @pytest.fixture
@@ -31,15 +30,13 @@ def run_cli(argv):
 
     # argv[0] must be the program name (repomapper), rest are actual args
     full_argv = ["repomapper"] + argv
-    with patch.object(sys, "argv", full_argv):
-        with patch.object(sys.stdout, "write", buf_out.write):
-            with patch.object(sys.stderr, "write", buf_err.write):
-                try:
-                    main()
-                except SystemExit as e:
-                    exit_code = e.code
-                else:
-                    exit_code = 0
+    with patch.object(sys, "argv", full_argv), patch.object(sys.stdout, "write", buf_out.write), patch.object(sys.stderr, "write", buf_err.write):
+            try:
+                main()
+            except SystemExit as e:
+                exit_code = e.code
+            else:
+                exit_code = 0
 
     return exit_code, buf_out.getvalue(), buf_err.getvalue()
 
