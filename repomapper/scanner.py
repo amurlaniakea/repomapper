@@ -15,35 +15,85 @@ class RepoScanner:
     """Scans a repository and builds a structured map."""
 
     ENTRY_POINT_PATTERNS = [
-        "main.py", "app.py", "server.py", "cli.py", "__main__.py",
-        "index.js", "index.ts", "server.ts", "app.ts",
-        "main.go", "cmd/main.go",
-        "src/main/java", "Main.java",
-        "lib.rs", "main.rs",
+        "main.py",
+        "app.py",
+        "server.py",
+        "cli.py",
+        "__main__.py",
+        "index.js",
+        "index.ts",
+        "server.ts",
+        "app.ts",
+        "main.go",
+        "cmd/main.go",
+        "src/main/java",
+        "Main.java",
+        "lib.rs",
+        "main.rs",
     ]
 
     TEST_PATTERNS = [
-        "test_", "_test.", "tests/", "/test/", "spec/", "_spec.",
-        "conftest.py", "pytest.ini", "setup.cfg", "tox.ini",
-        "jest.config", "vitest.config",
+        "test_",
+        "_test.",
+        "tests/",
+        "/test/",
+        "spec/",
+        "_spec.",
+        "conftest.py",
+        "pytest.ini",
+        "setup.cfg",
+        "tox.ini",
+        "jest.config",
+        "vitest.config",
     ]
 
     CONFIG_PATTERNS = [
-        "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
-        "package.json", "tsconfig.json", "Cargo.toml", "go.mod",
-        "Makefile", "Dockerfile", "docker-compose", ".github/",
-        "CMakeLists.txt", "pom.xml", "build.gradle",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "requirements.txt",
+        "package.json",
+        "tsconfig.json",
+        "Cargo.toml",
+        "go.mod",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose",
+        ".github/",
+        "CMakeLists.txt",
+        "pom.xml",
+        "build.gradle",
     ]
 
     DOC_PATTERNS = [
-        "README", "CONTRIBUTING", "CHANGELOG", "LICENSE",
-        "docs/", "doc/", "ARCHITECTURE",
+        "README",
+        "CONTRIBUTING",
+        "CHANGELOG",
+        "LICENSE",
+        "docs/",
+        "doc/",
+        "ARCHITECTURE",
     ]
 
     IGNORE_DIRS = {
-        ".git", ".svn", ".hg", "__pycache__", "node_modules",
-        ".venv", "venv", "env", ".env", ".tox", ".mypy_cache",
-        ".pytest_cache", "dist", "build", ".eggs", ".idea", ".vscode", ".vs",
+        ".git",
+        ".svn",
+        ".hg",
+        "__pycache__",
+        "node_modules",
+        ".venv",
+        "venv",
+        "env",
+        ".env",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "dist",
+        "build",
+        ".eggs",
+        ".idea",
+        ".vscode",
+        ".vs",
     }
 
     IGNORE_DIR_SUFFIXES = (".egg-info",)
@@ -67,7 +117,13 @@ class RepoScanner:
         language_stats: dict[str, int] = {}
 
         for root, dirs, files in os.walk(self.repo_path):
-            dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS and not d.endswith(self.IGNORE_DIR_SUFFIXES) and not d.startswith(".")]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in self.IGNORE_DIRS
+                and not d.endswith(self.IGNORE_DIR_SUFFIXES)
+                and not d.startswith(".")
+            ]
 
             rel_root = Path(root).relative_to(self.repo_path)
             depth = len(rel_root.parts) if str(rel_root) != "." else 0
@@ -88,7 +144,7 @@ class RepoScanner:
                 total_files += 1
 
                 try:
-                    with open(file_path, "r", errors="ignore") as f:
+                    with open(file_path, errors="ignore") as f:
                         lines = len(f.readlines())
                         total_lines += lines
                 except (PermissionError, OSError):
@@ -96,11 +152,20 @@ class RepoScanner:
 
                 ext = file_path.suffix
                 lang_map = {
-                    ".py": "Python", ".js": "JavaScript", ".ts": "TypeScript",
-                    ".go": "Go", ".rs": "Rust", ".java": "Java",
-                    ".rb": "Ruby", ".c": "C", ".cpp": "C++",
-                    ".h": "C/C++", ".cs": "C#", ".php": "PHP",
-                    ".swift": "Swift", ".kt": "Kotlin",
+                    ".py": "Python",
+                    ".js": "JavaScript",
+                    ".ts": "TypeScript",
+                    ".go": "Go",
+                    ".rs": "Rust",
+                    ".java": "Java",
+                    ".rb": "Ruby",
+                    ".c": "C",
+                    ".cpp": "C++",
+                    ".h": "C/C++",
+                    ".cs": "C#",
+                    ".php": "PHP",
+                    ".swift": "Swift",
+                    ".kt": "Kotlin",
                 }
                 if ext in lang_map:
                     lang = lang_map[ext]
@@ -115,7 +180,11 @@ class RepoScanner:
                 if self._matches_any(rel_path, self.DOC_PATTERNS):
                     doc_files.append(rel_path)
 
-        language = max(language_stats, key=language_stats.get) if language_stats else "Unknown"
+        language = (
+            max(language_stats, key=language_stats.get)  # type: ignore[arg-type]
+            if language_stats
+            else "Unknown"
+        )
         subsystems = self._identify_subsystems(directories, test_files)
         dependencies = self._extract_dependencies()
         conventions = self._detect_conventions()
@@ -149,22 +218,21 @@ class RepoScanner:
         path_parts = Path(path).parts
 
         # Patterns that should only match in test directories or at root level
-        TEST_PREFIX_PATTERNS = {"test_", "_test", "spec", "_spec"}
-        TEST_DIR_PATTERNS = {"/test/", "/tests/", "/spec/"}
+        test_prefix_patterns = {"test_", "_test", "spec", "_spec"}
+        test_dir_patterns = {"/test/", "/tests/", "/spec/"}
 
         for pattern in patterns:
             pat_lower = pattern.lower()
 
-            # Check if this is a test-related pattern that needs directory awareness
             is_test_pattern = (
-                any(pat_lower.startswith(p) for p in TEST_PREFIX_PATTERNS) or
-                any(pat_lower.startswith(p) for p in TEST_DIR_PATTERNS)
+                any(pat_lower.startswith(p) for p in test_prefix_patterns) or
+                any(pat_lower.startswith(p) for p in test_dir_patterns)
             )
 
             if is_test_pattern:
                 # For test patterns, require the file to be in a tests/ directory
                 # or at the repo root level
-                if '/' in pat_lower:
+                if "/" in pat_lower:
                     # Directory pattern like 'tests/' — check full path
                     if pat_lower in path_lower:
                         return True
@@ -174,8 +242,7 @@ class RepoScanner:
                     if filename.startswith(pat_lower):
                         parent_dirs = path_parts[:-1]
                         is_in_tests = any(
-                            d.lower() in ('tests', 'test', 'spec')
-                            for d in parent_dirs
+                            d.lower() in ("tests", "test", "spec") for d in parent_dirs
                         )
                         is_at_root = len(parent_dirs) == 0
                         if is_in_tests or is_at_root:
@@ -187,7 +254,9 @@ class RepoScanner:
 
         return False
 
-    def _identify_subsystems(self, directories: list[str], test_files: list[str]) -> list[dict[str, Any]]:
+    def _identify_subsystems(
+        self, directories: list[str], test_files: list[str]
+    ) -> list[dict[str, Any]]:
         """Identify subsystems by grouping directories up to 2 levels deep.
 
         For repos with src/auth/, src/api/, src/models/, this produces
@@ -199,10 +268,7 @@ class RepoScanner:
         for d in directories:
             parts = d.split("/")
             # Use up to 2 levels: e.g., "src/auth" → "src/auth", "src/api" → "src/api"
-            if len(parts) >= 2:
-                key = "/".join(parts[:2])
-            else:
-                key = parts[0]
+            key = "/".join(parts[:2]) if len(parts) >= 2 else parts[0]
 
             if key not in subsystems:
                 subsystems[key] = {
@@ -232,7 +298,7 @@ class RepoScanner:
                     line = line.strip()
                     if line and not line.startswith("#"):
                         # Extract package name (before any version specifier)
-                        match = re.match(r'^([a-zA-Z0-9_-]+)', line)
+                        match = re.match(r"^([a-zA-Z0-9_-]+)", line)
                         if match:
                             deps.append(match.group(1))
 
@@ -240,16 +306,17 @@ class RepoScanner:
         if pyproject.exists():
             try:
                 import tomllib
+
                 with open(pyproject, "rb") as f:
                     data = tomllib.load(f)
                 # Safely extract from PEP 621 dependencies
                 project_deps = data.get("project", {}).get("dependencies", [])
                 for dep in project_deps:
                     # Extract just the package name from specifier like "requests>=2.0,<3.0"
-                    match = re.match(r'^([a-zA-Z0-9_-]+)', dep.strip())
+                    match = re.match(r"^([a-zA-Z0-9_-]+)", dep.strip())
                     if match:
                         deps.append(match.group(1))
-            except Exception:
+            except Exception:  # noqa: S110 — intentional fallback to package_json
                 pass
 
         package_json = self.repo_path / "package.json"
@@ -262,6 +329,19 @@ class RepoScanner:
                         deps.extend(data[section].keys())
             except (json.JSONDecodeError, KeyError):
                 pass
+
+        # Modern lock files — extract package names as signals
+        modern_files = {
+            "poetry.lock": "poetry",
+            "uv.lock": "uv",
+            "Pipfile": "pipenv",
+            "Pipfile.lock": "pipenv",
+        }
+        for filename, tool in modern_files.items():
+            filepath = self.repo_path / filename
+            if filepath.exists():
+                # Add the tool itself as a detected dependency signal
+                deps.append(f"__tool__{tool}")
 
         return list(dict.fromkeys(deps))
 
@@ -317,7 +397,7 @@ class RepoScanner:
 
             for py_file in py_files:
                 try:
-                    with open(py_file, "r", errors="ignore") as f:
+                    with open(py_file, errors="ignore") as f:
                         content = f.read()
                     if "def " in content and "->" in content:
                         has_type_hints = True

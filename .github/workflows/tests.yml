@@ -34,7 +34,7 @@ jobs:
         run: |
           pip install ruff mypy
           ruff check repomapper/ tests/
-          mypy repomapper/ --ignore-missing-imports
+          mypy repomapper/
 
       - name: Run tests
         run: |
