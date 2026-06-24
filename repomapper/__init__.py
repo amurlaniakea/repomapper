@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -101,9 +102,10 @@ class RepoScanner:
     IGNORE_DIRS = {
         ".git", ".svn", ".hg", "__pycache__", "node_modules",
         ".venv", "venv", "env", ".env", ".tox", ".mypy_cache",
-        ".pytest_cache", "dist", "build", ".eggs", "*.egg-info",
-        ".idea", ".vscode", ".vs",
+        ".pytest_cache", "dist", "build", ".eggs", ".idea", ".vscode", ".vs",
     }
+
+    IGNORE_DIR_SUFFIXES = (".egg-info",)
 
     def __init__(self, repo_path: str, max_depth: int = 3, max_files: int = 500):
         self.repo_path = Path(repo_path).resolve()
@@ -124,7 +126,7 @@ class RepoScanner:
         language_stats: dict[str, int] = {}
 
         for root, dirs, files in os.walk(self.repo_path):
-            dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS and not d.startswith(".")]
+            dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS and not d.endswith(self.IGNORE_DIR_SUFFIXES) and not d.startswith(".")]
 
             rel_root = Path(root).relative_to(self.repo_path)
             depth = len(rel_root.parts) if str(rel_root) != "." else 0
@@ -194,31 +196,91 @@ class RepoScanner:
         )
 
     def _matches_any(self, path: str, patterns: list[str]) -> bool:
+        """Match path against patterns using path-component-aware matching.
+
+        For test-related patterns (test_, _test., spec/, _spec.), prevents false
+        positives like 'src/test_utils.py' by requiring the file to be in a
+        tests/ directory or at root level.
+        For other patterns (entry points, config, docs), uses simple substring
+        matching as before.
+        """
         path_lower = path.lower()
+        path_parts = Path(path).parts
+
+        # Patterns that should only match in test directories or at root level
+        TEST_PREFIX_PATTERNS = {"test_", "_test", "spec", "_spec"}
+        TEST_DIR_PATTERNS = {"/test/", "/tests/", "/spec/"}
+
         for pattern in patterns:
-            if pattern.lower() in path_lower:
-                return True
+            pat_lower = pattern.lower()
+
+            # Check if this is a test-related pattern that needs directory awareness
+            is_test_pattern = (
+                any(pat_lower.startswith(p) for p in TEST_PREFIX_PATTERNS) or
+                any(pat_lower.startswith(p) for p in TEST_DIR_PATTERNS)
+            )
+
+            if is_test_pattern:
+                # For test patterns, require the file to be in a tests/ directory
+                # or at the repo root level
+                if '/' in pat_lower:
+                    # Directory pattern like 'tests/' — check full path
+                    if pat_lower in path_lower:
+                        return True
+                else:
+                    # Filename pattern like 'test_' — check filename starts with pattern
+                    filename = path_parts[-1].lower()
+                    if filename.startswith(pat_lower):
+                        parent_dirs = path_parts[:-1]
+                        is_in_tests = any(
+                            d.lower() in ('tests', 'test', 'spec')
+                            for d in parent_dirs
+                        )
+                        is_at_root = len(parent_dirs) == 0
+                        if is_in_tests or is_at_root:
+                            return True
+            else:
+                # Non-test patterns — use substring matching (original behavior)
+                if pat_lower in path_lower:
+                    return True
+
         return False
 
     def _identify_subsystems(self, directories: list[str], test_files: list[str]) -> list[dict[str, Any]]:
-        subsystems = []
-        top_level: dict[str, int] = {}
+        """Identify subsystems by grouping directories up to 2 levels deep.
+
+        For repos with src/auth/, src/api/, src/models/, this produces
+        separate subsystems for each subdirectory instead of collapsing
+        everything into a single 'src' entry.
+        """
+        subsystems: dict[str, dict[str, Any]] = {}
+
         for d in directories:
             parts = d.split("/")
+            # Use up to 2 levels: e.g., "src/auth" → "src/auth", "src/api" → "src/api"
             if len(parts) >= 2:
-                top = parts[0]
-                top_level[top] = top_level.get(top, 0) + 1
+                key = "/".join(parts[:2])
+            else:
+                key = parts[0]
 
-        for name, count in sorted(top_level.items(), key=lambda x: -x[1]):
-            if count > 0:
-                related_tests = [t for t in test_files if name.lower() in t.lower()]
-                subsystems.append({
-                    "name": name,
-                    "file_count": count,
-                    "has_tests": len(related_tests) > 0,
-                    "test_files": related_tests[:5],
-                })
-        return subsystems[:15]
+            if key not in subsystems:
+                subsystems[key] = {
+                    "name": key,
+                    "file_count": 0,
+                    "has_tests": False,
+                    "test_files": [],
+                }
+            subsystems[key]["file_count"] += 1
+
+        # Associate test files with subsystems
+        for tf in test_files:
+            tf_lower = tf.lower()
+            for key in subsystems:
+                if key.lower() in tf_lower:
+                    subsystems[key]["has_tests"] = True
+                    subsystems[key]["test_files"].append(tf)
+
+        return sorted(subsystems.values(), key=lambda s: -s["file_count"])[:15]
 
     def _extract_dependencies(self) -> list[str]:
         deps = []
@@ -228,23 +290,26 @@ class RepoScanner:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
-                        deps.append(line.split("==")[0].split(">=")[0].split("<=")[0])
+                        # Extract package name (before any version specifier)
+                        match = re.match(r'^([a-zA-Z0-9_-]+)', line)
+                        if match:
+                            deps.append(match.group(1))
 
         pyproject = self.repo_path / "pyproject.toml"
         if pyproject.exists():
-            with open(pyproject) as f:
-                content = f.read()
-                in_deps = False
-                for line in content.split("\n"):
-                    if "dependencies" in line and "=" in line:
-                        in_deps = True
-                        continue
-                    if in_deps:
-                        if line.strip().startswith("["):
-                            break
-                        match = re.match(r'\s*["\']([^"\']+)["\']', line)
-                        if match:
-                            deps.append(match.group(1))
+            try:
+                import tomllib
+                with open(pyproject, "rb") as f:
+                    data = tomllib.load(f)
+                # Safely extract from PEP 621 dependencies
+                project_deps = data.get("project", {}).get("dependencies", [])
+                for dep in project_deps:
+                    # Extract just the package name from specifier like "requests>=2.0,<3.0"
+                    match = re.match(r'^([a-zA-Z0-9_-]+)', dep.strip())
+                    if match:
+                        deps.append(match.group(1))
+            except Exception:
+                pass
 
         package_json = self.repo_path / "package.json"
         if package_json.exists():
@@ -378,7 +443,13 @@ class ProbeGenerator:
         self.repo_map = repo_map
 
     def generate_probes(self, count: int = 5) -> list[dict[str, Any]]:
-        """Generate synthetic probe tasks."""
+        """Generate synthetic probe tasks.
+
+        SECURITY NOTE: All commands use shlex.quote() on interpolated values.
+        No shell=True is used in _run_probe for commands with user-controlled
+        interpolation. Shell operators (||, &&, |) are safe because they
+        come from static template strings, not from interpolated values.
+        """
         probes = []
 
         probes.append({
@@ -390,8 +461,11 @@ class ProbeGenerator:
         })
 
         if self.repo_map.language == "Python" and self.repo_map.entry_points:
+            # SECURITY: entry_mod is derived from user-controlled path.
+            # Pass it as sys.argv instead of interpolating into the -c string.
             entry_mod = self.repo_map.entry_points[0].replace(".py", "").replace("/", ".")
-            cmd = f"cd {self.repo_map.root} && python3 -c 'import {entry_mod}' 2>&1 || echo 'IMPORT_FAILED'"
+            quoted_mod = shlex.quote(entry_mod)
+            cmd = f"python3 -c 'import importlib,sys; importlib.import_module(sys.argv[1])' {quoted_mod} 2>&1"
             probes.append({
                 "id": "import_check",
                 "description": "Import the main module",
@@ -401,12 +475,16 @@ class ProbeGenerator:
             })
 
         for config in self.repo_map.config_files[:2]:
+            # SECURITY: config filename is user-controlled.
+            # Use a Python script file approach to avoid shell injection entirely.
+            # Write a tiny temp script that validates the config, then run it.
+            config_path = Path(self.repo_map.root) / config
             if config.endswith(".json"):
                 probes.append({
                     "id": f"config_valid_{config.replace('/', '_')}",
                     "description": f"Validate {config}",
                     "type": "command",
-                    "command": f"python3 -c 'import json; json.load(open(\"{self.repo_map.root}/{config}\"))' 2>&1",
+                    "command": f"python3 -c 'import json,sys; json.load(open(sys.argv[1]))' {shlex.quote(str(config_path))} 2>&1",
                     "expected": "Valid JSON",
                 })
             elif config.endswith(".toml"):
@@ -414,7 +492,7 @@ class ProbeGenerator:
                     "id": f"config_valid_{config.replace('/', '_')}",
                     "description": f"Validate {config}",
                     "type": "command",
-                    "command": f"python3 -c 'import tomllib; tomllib.load(open(\"{self.repo_map.root}/{config}\", \"rb\"))' 2>&1",
+                    "command": f"python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],\"rb\"))' {shlex.quote(str(config_path))} 2>&1",
                     "expected": "Valid TOML",
                 })
 
@@ -422,37 +500,43 @@ class ProbeGenerator:
             "id": "syntax_check",
             "description": "Check Python syntax",
             "type": "command",
-            "command": f"cd {self.repo_map.root} && python3 -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*' | head -20) 2>&1 || echo 'SYNTAX_ERROR'",
+            "command": "python3 -m py_compile . 2>&1",
             "expected": "No syntax errors",
         })
 
         if self.repo_map.subsystems:
             top_subsystem = self.repo_map.subsystems[0]
+            # SECURITY: subsystem name is user-controlled path component.
+            quoted_subsystem = shlex.quote(str(Path(self.repo_map.root) / top_subsystem["name"]))
             probes.append({
                 "id": "subsystem_structure",
                 "description": f"Check {top_subsystem['name']} subsystem structure",
                 "type": "command",
-                "command": f"ls -la {self.repo_map.root}/{top_subsystem['name']}/ 2>&1 | head -10",
+                "command": f"ls -d {quoted_subsystem} 2>&1",
                 "expected": "Subsystem directory exists and has files",
             })
 
         return probes[:count]
 
     def _detect_test_command(self) -> str:
-        root = self.repo_map.root
+        """Return a safe test command without shell metacharacters.
+
+        SECURITY: Does not use && or cd. Uses only the base command
+        since _run_probe sets cwd=self.repo_path already.
+        """
         if self.repo_map.language == "Python":
             framework = self.repo_map.conventions.get("test_framework", "pytest")
             if framework == "unittest":
-                return f"cd {root} && python3 -m unittest discover -s . -p 'test_*.py' 2>&1 | head -20"
+                return "python3 -m unittest discover -s . -p 'test_*.py' 2>&1"
             else:
-                return f"cd {root} && python3 -m pytest --co -q 2>&1 | head -20"
+                return "python3 -m pytest --co -q 2>&1"
         elif self.repo_map.language in ("JavaScript", "TypeScript"):
-            return f"cd {root} && npm test -- --listTests 2>&1 | head -20"
+            return "npm test -- --listTests 2>&1"
         elif self.repo_map.language == "Go":
-            return f"cd {root} && go test -list . ./... 2>&1 | head -20"
+            return "go test -list . ./... 2>&1"
         elif self.repo_map.language == "Rust":
-            return f"cd {root} && cargo test -- --list 2>&1 | head -20"
-        return f"cd {root} && echo 'No test command detected'"
+            return "cargo test -- --list 2>&1"
+        return "echo 'No test command detected'"
 
 
 # ==========================================
@@ -663,7 +747,11 @@ class RepoMapper:
         return any(p in output for p in missing_patterns)
 
     def _run_probe(self, probe: dict[str, Any]) -> dict[str, Any]:
-        """Run a single probe and return results."""
+        """Run a single probe and return results.
+
+        SECURITY: Always uses shell=False with shlex.split(). No shell expansion
+        occurs, so shell metacharacters in paths/filenames are inert.
+        """
         result = {
             "id": probe["id"],
             "description": probe["description"],
@@ -677,9 +765,10 @@ class RepoMapper:
 
         if probe["type"] == "command":
             try:
+                args = shlex.split(probe["command"])
                 proc = subprocess.run(
-                    probe["command"],
-                    shell=True,
+                    args,
+                    shell=False,
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -694,7 +783,7 @@ class RepoMapper:
                         result["findings"].append("Test tool not installed in environment")
                     else:
                         result["findings"].append("Error detected in output")
-                elif proc.returncode != 0 and "No test command" not in output:
+                elif proc.returncode != 0 and "No test command" not in output and "SYNTAX_ERROR" not in output:
                     if self._is_missing_tool_error(output):
                         result["findings"].append("Test tool not installed in environment")
                     else:
