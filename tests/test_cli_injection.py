@@ -5,11 +5,11 @@ The witness path is absolute (from tempfile.mkdtemp) so it works regardless
 of cwd. If shell=True is used anywhere in the pipeline, the witness file
 is created. If shell=False is used correctly, it is NOT created.
 """
+
 import os
-import sys
-import shutil
-import tempfile
 import subprocess
+import sys
+import tempfile
 
 import pytest
 

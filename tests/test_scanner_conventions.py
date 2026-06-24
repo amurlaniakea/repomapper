@@ -1,9 +1,6 @@
 """Tests for heuristic branches in RepoScanner._detect_conventions."""
 
-import pathlib
-import tempfile
 
-import pytest
 
 from repomapper import RepoScanner
 

@@ -37,6 +37,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["repomapper*"]
 
 [tool.ruff]

@@ -9,11 +9,9 @@ Each test covers a DISTINCT interpolation point in ProbeGenerator -> run_probe p
 4. syntax_check: root path interpolated into "cd {root} && ... $(find ...)"
 5. subsystem_structure: root path interpolated into "ls -la {root}/{name}/"
 """
-import os
+
 import pathlib
 import tempfile
-
-import pytest
 
 from repomapper import ProbeGenerator
 from repomapper.probes import run_probe
@@ -106,7 +104,9 @@ class TestCommandInjection_FullPipeline:
             probes = gen.generate_probes(count=5)
 
             config_probe = next((p for p in probes if p["id"].startswith("config_valid")), None)
-            assert config_probe is not None, f"config_valid probe not generated: {[p['id'] for p in probes]}"
+            assert config_probe is not None, (
+                f"config_valid probe not generated: {[p['id'] for p in probes]}"
+            )
 
             run_probe(tmpdir, config_probe)
             assert not marker.exists(), f"INJECTION via config_valid! {marker} exists"
@@ -124,7 +124,9 @@ class TestCommandInjection_FullPipeline:
             probes = gen.generate_probes(count=5)
 
             syntax_check = next((p for p in probes if p["id"] == "syntax_check"), None)
-            assert syntax_check is not None, f"syntax_check probe not generated: {[p['id'] for p in probes]}"
+            assert syntax_check is not None, (
+                f"syntax_check probe not generated: {[p['id'] for p in probes]}"
+            )
 
             if malicious_root in syntax_check["command"]:
                 run_probe(tmpdir, syntax_check)
@@ -144,13 +146,22 @@ class TestCommandInjection_FullPipeline:
 
             repo_map = _make_repo_map(
                 root=malicious_root,
-                subsystems=[{"name": "tests", "file_count": 1, "has_tests": True, "test_files": ["tests/test_main.py"]}],
+                subsystems=[
+                    {
+                        "name": "tests",
+                        "file_count": 1,
+                        "has_tests": True,
+                        "test_files": ["tests/test_main.py"],
+                    }
+                ],
             )
             gen = ProbeGenerator(repo_map)
             probes = gen.generate_probes(count=5)
 
             subsystem_probe = next((p for p in probes if p["id"] == "subsystem_structure"), None)
-            assert subsystem_probe is not None, f"subsystem_structure probe not generated: {[p['id'] for p in probes]}"
+            assert subsystem_probe is not None, (
+                f"subsystem_structure probe not generated: {[p['id'] for p in probes]}"
+            )
 
             run_probe(tmpdir, subsystem_probe)
             assert not marker.exists(), f"INJECTION via subsystem_structure! {marker} exists"

@@ -1,13 +1,11 @@
 """RepoMapper tests."""
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from repomapper import RepoMapper, RepoScanner, ProbeGenerator, GuidanceGenerator
+from repomapper import GuidanceGenerator, ProbeGenerator, RepoMapper, RepoScanner
 
 
 @pytest.fixture
@@ -34,9 +32,7 @@ def sample_repo(tmp_path):
     )
 
     # Config
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "test-repo"\nversion = "0.1.0"\n'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "test-repo"\nversion = "0.1.0"\n')
 
     # README
     (tmp_path / "README.md").write_text("# Test Repo\n\nA test repository.\n")
@@ -196,10 +192,10 @@ def unittest_repo(tmp_path):
     """Create a repo that uses unittest (not pytest)."""
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_foo.py").write_text(
-        'import unittest\n\n'
-        'class TestFoo(unittest.TestCase):\n'
-        '    def test_bar(self):\n'
-        '        self.assertTrue(True)\n'
+        "import unittest\n\n"
+        "class TestFoo(unittest.TestCase):\n"
+        "    def test_bar(self):\n"
+        "        self.assertTrue(True)\n"
     )
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "unittest-repo"\nversion = "0.1.0"\n'
@@ -249,7 +245,8 @@ class TestCLI:
         """python3 -m repomapper /path --no-probes should succeed."""
         result = subprocess.run(
             [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "Language:" in result.stdout
@@ -258,7 +255,8 @@ class TestCLI:
         """python3 -m repomapper /path --no-probes --json should return valid JSON."""
         result = subprocess.run(
             [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes", "--json"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         data = json.loads(result.stdout)
@@ -269,7 +267,8 @@ class TestCLI:
         """CLI should write AGENTS.md to the repo path by default."""
         result = subprocess.run(
             [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         agents_md = sample_repo / "AGENTS.md"
@@ -283,8 +282,17 @@ class TestCLI:
         """--output should write to the specified file."""
         out_file = sample_repo / "GUIDE.md"
         result = subprocess.run(
-            [sys.executable, "-m", "repomapper", str(sample_repo), "--no-probes", "-o", str(out_file)],
-            capture_output=True, text=True
+            [
+                sys.executable,
+                "-m",
+                "repomapper",
+                str(sample_repo),
+                "--no-probes",
+                "-o",
+                str(out_file),
+            ],
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert out_file.exists()
@@ -294,6 +302,7 @@ class TestCLI:
         """CLI with invalid path should fail gracefully."""
         result = subprocess.run(
             [sys.executable, "-m", "repomapper", "/nonexistent/path/xyz", "--no-probes"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
         assert result.returncode != 0
