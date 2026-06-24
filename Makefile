@@ -1,4 +1,4 @@
-.PHONY: install test lint clean all format
+.PHONY: install test lint clean all format build
 
 # Auto-detect Python from venv or system
 PYTHON := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
@@ -23,12 +23,19 @@ lint:
 	@echo "==> Running ruff..."
 	$(PYTHON) -m ruff check repomapper/ tests/
 	@echo "==> Running mypy..."
-	$(PYTHON) -m mypy repomapper/ --ignore-missing-imports
+	$(PYTHON) -m mypy repomapper/
 	@echo "==> Lint clean."
 
 format:
 	@echo "==> Auto-formatting with ruff..."
 	$(PYTHON) -m ruff format repomapper/ tests/
+
+build:
+	@echo "==> Building distribution packages..."
+	$(PIP) install build
+	$(PYTHON) -m build
+	@echo "==> Built packages in dist/:"
+	@ls -la dist/
 
 clean:
 	@echo "==> Cleaning build artifacts..."
