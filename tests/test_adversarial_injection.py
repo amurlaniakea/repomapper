@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Pedro Sordo Martínez <amurlaniakea@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Adversarial tests for command injection vulnerability in RepoMapper probes.
 
 These tests MUST FAIL against the unpatched code (RED) and PASS after the fix (GREEN).

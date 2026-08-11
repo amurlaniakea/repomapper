@@ -5,6 +5,8 @@
 Generates a compact `AGENTS.md`-style operational guide for any code repository.
 Based on the paper ["Probe-and-Refine Tuning of Repository Guidance for Coding Agents"](https://arxiv.org/abs/2606.20512) (arXiv:2606.20512, Jun 2026).
 
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
+
 ## The Problem
 
 LLM-based coding agents need operational knowledge about a repository that doesn't exist in the code itself:
@@ -140,7 +142,11 @@ repomapper/
 
 ## License
 
-AGPL-3.0 — Copyright (C) 2026 Pedro Sordo Martínez <amurlaniakea@gmail.com>
+This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**, per the [Free Software Foundation](https://www.gnu.org/licenses/agpl-3.0.html). The full license text is in [LICENSE](./LICENSE).
+
+**Source access (AGPL §13):** RepoMapper is a local CLI tool, not a network service, so §13 does not apply in practice. The complete source is published at [github.com/amurlaniakea/repomapper](https://github.com/amurlaniakea/repomapper); copies can be requested from [amurlaniakea@gmail.com](mailto:amurlaniakea@gmail.com).
+
+Copyright (C) 2026 Pedro Sordo Martínez <amurlaniakea@gmail.com>
 
 ## References
 

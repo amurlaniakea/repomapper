@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Pedro Sordo Martínez <amurlaniakea@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """CLI integration test for command injection vulnerability.
 
 Uses os.makedirs with literal $(touch <witness>) in the directory name.
