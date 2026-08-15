@@ -12,6 +12,20 @@ from typing import Any
 
 from .models import RepoMap
 
+# Directories/generated artifacts that must never count as project source.
+# Path.rglob() ignores .gitignore, so these would otherwise leak into
+# probes that enumerate Python files (e.g. the syntax_check probe).
+EXCLUDE_DIRS = {
+    "venv",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".git",
+    "build",
+    "dist",
+    "*.egg-info",
+}
+
 
 class ProbeGenerator:
     """Generates synthetic bug-fix probes for a repository."""
@@ -45,7 +59,7 @@ class ProbeGenerator:
             # Pass it as sys.argv instead of interpolating into the -c string.
             entry_mod = self.repo_map.entry_points[0].replace(".py", "").replace("/", ".")
             quoted_mod = shlex.quote(entry_mod)
-            cmd = f"python3 -c 'import importlib,sys; importlib.import_module(sys.argv[1])' {quoted_mod} 2>&1"
+            cmd = f"python3 -c 'import importlib,sys; importlib.import_module(sys.argv[1])' {quoted_mod}"
             probes.append(
                 {
                     "id": "import_check",
@@ -66,7 +80,7 @@ class ProbeGenerator:
                         "id": f"config_valid_{config.replace('/', '_')}",
                         "description": f"Validate {config}",
                         "type": "command",
-                        "command": f"python3 -c 'import json,sys; json.load(open(sys.argv[1]))' {shlex.quote(str(config_path))} 2>&1",
+                        "command": f"python3 -c 'import json,sys; json.load(open(sys.argv[1]))' {shlex.quote(str(config_path))}",
                         "expected": "Valid JSON",
                     }
                 )
@@ -76,7 +90,7 @@ class ProbeGenerator:
                         "id": f"config_valid_{config.replace('/', '_')}",
                         "description": f"Validate {config}",
                         "type": "command",
-                        "command": f"python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],\"rb\"))' {shlex.quote(str(config_path))} 2>&1",
+                        "command": f"python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],\"rb\"))' {shlex.quote(str(config_path))}",
                         "expected": "Valid TOML",
                     }
                 )
@@ -98,7 +112,7 @@ class ProbeGenerator:
                     "id": "subsystem_structure",
                     "description": f"Check {top_subsystem['name']} subsystem structure",
                     "type": "command",
-                    "command": f"ls -d {quoted_subsystem} 2>&1",
+                    "command": f"ls -d {quoted_subsystem}",
                     "expected": "Subsystem directory exists and has files",
                 }
             )
@@ -115,11 +129,11 @@ class ProbeGenerator:
         if self.repo_map.language == "Python":
             return "static_analysis"
         elif self.repo_map.language in ("JavaScript", "TypeScript"):
-            return "npm test -- --listTests 2>&1"
+            return "npm test -- --listTests"
         elif self.repo_map.language == "Go":
-            return "go test -list . ./... 2>&1"
+            return "go test -list . ./..."
         elif self.repo_map.language == "Rust":
-            return "cargo test -- --list 2>&1"
+            return "cargo test -- --list"
         return "echo 'No test command detected'"
 
 
@@ -224,7 +238,14 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
         # No subprocess execution — safe for untrusted repos.
         repo_dir = Path(repo_path)
         errors = []
-        py_files = list(repo_dir.rglob("*.py"))[:50]
+        all_py_files = [
+            p
+            for p in repo_dir.rglob("*.py")
+            if not any(
+                part in EXCLUDE_DIRS or part.endswith(".egg-info") for part in p.parts
+            )
+        ]
+        py_files = all_py_files[:50]
         for py_file in py_files:
             try:
                 py_compile.compile(str(py_file), doraise=True)
@@ -233,7 +254,15 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
 
         if not errors:
             result["passed"] = True
-            result["findings"].append(f"All {len(py_files)} Python files compile cleanly")
+            total = len(all_py_files)
+            if total > len(py_files):
+                result["findings"].append(
+                    f"Sampled {len(py_files)} of {total} Python files — all compiled cleanly"
+                )
+            else:
+                result["findings"].append(
+                    f"All {len(py_files)} Python files compile cleanly"
+                )
         else:
             result["output"] = "\n".join(errors[:5])
             result["findings"].append(f"Syntax errors in {len(errors)} file(s)")
@@ -242,7 +271,18 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_missing_tool_error(output: str) -> bool:
-    """Check if probe output indicates a missing tool (not a real repo error)."""
+    """Check if probe output indicates a missing tool (not a real repo error).
+
+    KNOWN LIMITATION (Claude audit, not fixed yet): the patterns below are
+    intentionally broad, but \"ModuleNotFoundError\" / \"No module named\" also
+    match GENUINE import failures inside the scanned repo (e.g. import_check
+    on a module whose relative imports are broken). Those are real repo
+    defects, not missing tools, yet they get mislabeled as
+    \"Test tool not installed in environment\". Fixing this requires
+    distinguishing \"the probe's own toolchain is missing\" from \"the
+    scanned repo cannot import its own module\" — deferred, tracked in the
+    audit report.
+    """
     missing_patterns = [
         "No module named",
         "ModuleNotFoundError",
