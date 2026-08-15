@@ -169,8 +169,10 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
             result["output"] = output[:500]
 
             if "IMPORT_FAILED" in output or "SYNTAX_ERROR" in output or "Traceback" in output:
-                if _is_missing_tool_error(output):
+                if _is_missing_tool_error(output, probe["id"]):
                     result["findings"].append("Test tool not installed in environment")
+                elif probe["id"] == "import_check":
+                    result["findings"].append(_import_failed_finding(probe))
                 else:
                     result["findings"].append("Error detected in output")
             elif (
@@ -178,8 +180,10 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
                 and "No test command" not in output
                 and "SYNTAX_ERROR" not in output
             ):
-                if _is_missing_tool_error(output):
+                if _is_missing_tool_error(output, probe["id"]):
                     result["findings"].append("Test tool not installed in environment")
+                elif probe["id"] == "import_check":
+                    result["findings"].append(_import_failed_finding(probe))
                 else:
                     result["findings"].append(f"Non-zero exit code: {proc.returncode}")
             else:
@@ -270,24 +274,51 @@ def run_probe(repo_path: str, probe: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _is_missing_tool_error(output: str) -> bool:
+def _import_failed_finding(probe: dict[str, Any]) -> str:
+    """Build a specific finding for import_check failures.
+
+    Extracts the target module from the generated command's last argument
+    (the module passed to importlib.import_module via sys.argv[1]) using
+    shlex.split — no fragile regex against output text. Falls back to the
+    probe id if the command is unavailable.
+    """
+    command = probe.get("command", "")
+    if command:
+        tokens = shlex.split(command)
+        if tokens:
+            target = tokens[-1]
+            return f"Module import failed: {target}"
+    return f"Module import failed: {probe.get('id', 'import_check')}"
+
+
+def _is_missing_tool_error(output: str, probe_id: str) -> bool:
     """Check if probe output indicates a missing tool (not a real repo error).
 
-    KNOWN LIMITATION (Claude audit, not fixed yet): the patterns below are
-    intentionally broad, but \"ModuleNotFoundError\" / \"No module named\" also
-    match GENUINE import failures inside the scanned repo (e.g. import_check
-    on a module whose relative imports are broken). Those are real repo
-    defects, not missing tools, yet they get mislabeled as
-    \"Test tool not installed in environment\". Fixing this requires
-    distinguishing \"the probe's own toolchain is missing\" from \"the
-    scanned repo cannot import its own module\" — deferred, tracked in the
-    audit report.
+    Classification is probe-aware: the same output text means different things
+    depending on which probe produced it.
+
+    - import_check imports the SCANNED REPO's entry module. A
+      ModuleNotFoundError / "No module named" here means the scanned repo has a
+      genuinely broken import (bad relative paths, missing __init__.py, ...) —
+      a real repo defect, never an absent tool (verified on click:
+      examples.complex.complex.cli; and fastapi).
+    - config_valid_* probes depend on stdlib modules (tomllib, absent on
+      Python 3.10). A ModuleNotFoundError here IS a real environment/tool
+      absence and must keep being classified as missing tool.
     """
-    missing_patterns = [
-        "No module named",
-        "ModuleNotFoundError",
-        "command not found",
-        "not recognized as an internal or external command",
-        "executable not found",
-    ]
+    if probe_id == "import_check":
+        # ModuleNotFoundError here is a repo defect, not a missing tool.
+        missing_patterns = [
+            "command not found",
+            "not recognized as an internal or external command",
+            "executable not found",
+        ]
+    else:
+        missing_patterns = [
+            "No module named",
+            "ModuleNotFoundError",
+            "command not found",
+            "not recognized as an internal or external command",
+            "executable not found",
+        ]
     return any(p in output for p in missing_patterns)
